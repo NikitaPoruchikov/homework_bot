@@ -4,9 +4,13 @@ import sys
 import time
 from http import HTTPStatus
 
+from requests.exceptions import RequestException
+from json.decoder import JSONDecodeError
 import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
+from telegram.error import TelegramError
+from contextlib import suppress
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -44,8 +48,8 @@ def check_tokens():
         if not value:
             logging.critical(
                 f'Отсутствует обязательная переменная окружения: {key}')
-            return False
-    return True
+            raise EnvironmentError(
+                f'Отсутствует обязательная переменная окружения: {key}')
 
 
 def send_message(bot, message):
@@ -53,7 +57,7 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(f'Бот отправил сообщение: {message}')
-    except Exception as error:
+    except TelegramError as error:
         logging.error(f'Ошибка при отправке сообщения: {error}')
 
 
@@ -66,13 +70,14 @@ def get_api_answer(timestamp):
         if not response.status_code == HTTPStatus.OK:
             logging.error(f'Ошибка при запросе к API: {response.status_code}')
             raise Exception('Ошибка доступа')
-    except requests.RequestException:
-        logging.error('Ошибка при запросе к API')
-    try:
-        return response.json()
-    except ValueError:
-        logging.error('Ответ от API не является JSON')
-        raise  # Пропустить подробное сообщение об ошибке в логах
+
+        try:
+            return response.json()
+        except JSONDecodeError:
+            logging.error('Ответ от API не является JSON')
+            raise
+    except RequestException as e:
+        logging.error(f'Ошибка при запросе к API: {e}')
 
 
 def check_response(response):
@@ -86,6 +91,10 @@ def check_response(response):
 
     if not isinstance(homeworks, list):
         raise TypeError('По ключу "homeworks" должно быть значение типа list')
+
+    current_date = response.get('current_date')
+    if current_date is None:
+        logging.warning('Ответ API не содержит ключа "current_date"')
 
     return homeworks
 
@@ -107,9 +116,7 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
-        return logging.critical(
-            'Отсутствуют обязательные переменные окружения.')
+    check_tokens()
 
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
@@ -119,16 +126,19 @@ def main():
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
             if homeworks:
-                message = parse_status(homeworks[0])
-                send_message(bot, message)
+                for homework in homeworks:
+                    message = parse_status(homework)
+                    send_message(bot, message)
             else:
                 logging.debug('Нет новых статусов для домашек.')
-            timestamp = int(time.time())
+            timestamp = response.get('current_date', timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logging.error(message)
-            send_message(bot, message)
-        time.sleep(RETRY_PERIOD)
+            logging.error(f'Сбой в работе программы: {error}')
+            with suppress(Exception):
+                send_message(bot, message)
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
