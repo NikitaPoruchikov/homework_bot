@@ -2,15 +2,17 @@ import logging
 import os
 import sys
 import time
+from contextlib import suppress
 from http import HTTPStatus
-
-from requests.exceptions import RequestException
 from json.decoder import JSONDecodeError
+
 import requests
 from dotenv import load_dotenv
+from requests.exceptions import RequestException
 from telebot import TeleBot
-from telegram.error import TelegramError
-from contextlib import suppress
+
+from constants import TELEGRAM_ERRORS
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -57,7 +59,7 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(f'Бот отправил сообщение: {message}')
-    except TelegramError as error:
+    except TELEGRAM_ERRORS as error:
         logging.error(f'Ошибка при отправке сообщения: {error}')
 
 
