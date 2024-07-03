@@ -10,8 +10,7 @@ import requests
 from dotenv import load_dotenv
 from requests.exceptions import RequestException
 from telebot import TeleBot
-
-from constants import TELEGRAM_ERRORS
+from telebot.apihelper import ApiException
 
 
 # Загрузка переменных окружения
@@ -59,7 +58,7 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logging.debug(f'Бот отправил сообщение: {message}')
-    except TELEGRAM_ERRORS as error:
+    except ApiException as error:
         logging.error(f'Ошибка при отправке сообщения: {error}')
 
 
@@ -72,14 +71,14 @@ def get_api_answer(timestamp):
         if not response.status_code == HTTPStatus.OK:
             logging.error(f'Ошибка при запросе к API: {response.status_code}')
             raise Exception('Ошибка доступа')
-
-        try:
-            return response.json()
-        except JSONDecodeError:
-            logging.error('Ответ от API не является JSON')
-            raise
+        return response.json()
+    except JSONDecodeError:
+        logging.error('Ответ от API не является JSON')
+        raise
     except RequestException as e:
         logging.error(f'Ошибка при запросе к API: {e}')
+        error_message = 'Дополнительная информация:' + e
+        raise error_message
 
 
 def check_response(response):
@@ -122,6 +121,7 @@ def main():
 
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
+    new_status_found = False
 
     while True:
         try:
@@ -131,8 +131,11 @@ def main():
                 for homework in homeworks:
                     message = parse_status(homework)
                     send_message(bot, message)
+                new_status_found = False
             else:
-                logging.debug('Нет новых статусов для домашек.')
+                if not new_status_found:
+                    logging.debug('Нет новых статусов для домашек.')
+                    new_status_found = True
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
