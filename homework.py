@@ -60,6 +60,7 @@ def send_message(bot, message):
         logging.debug(f'Бот отправил сообщение: {message}')
     except ApiException as error:
         logging.error(f'Ошибка при отправке сообщения: {error}')
+        raise
 
 
 def get_api_answer(timestamp):
@@ -121,21 +122,26 @@ def main():
 
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
-    new_status_found = False
+    previous_status = {}
 
     while True:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
-            if homeworks:
-                for homework in homeworks:
+            new_status_found = False
+
+            for homework in homeworks:
+                homework_id = homework['id']
+                homework_status = homework['status']
+                if previous_status.get(homework_id) != homework_status:
                     message = parse_status(homework)
                     send_message(bot, message)
-                new_status_found = False
-            else:
-                if not new_status_found:
-                    logging.debug('Нет новых статусов для домашек.')
+                    previous_status[homework_id] = homework_status
                     new_status_found = True
+
+            if not new_status_found:
+                logging.debug('Нет новых статусов для домашек.')
+
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
