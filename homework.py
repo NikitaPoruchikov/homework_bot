@@ -137,10 +137,11 @@ def main():
                     message = parse_status(homework)
                     send_message(bot, message)
                     previous_status[homework_id] = homework_status
-                    new_status_found = True
+                    new_status_found = False
 
             if not new_status_found:
                 logging.debug('Нет новых статусов для домашек.')
+                new_status_found = True
 
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
